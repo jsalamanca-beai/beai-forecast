@@ -52,7 +52,8 @@ function fmtTotalK(n: number): string {
 interface GridRow {
   id: string; // unique key for collapse tracking
   type: 'segment-header' | 'client-header' | 'project' | 'grand-total';
-  label: string;
+  client: string;       // first column: client/group name
+  opportunity: string;  // second column: project/opportunity name
   badge?: { text: string; className: string };
   probability?: number;
   monthly: MonthlyValues;
@@ -109,7 +110,8 @@ export function MonthlyGrid({ projects }: Props) {
           result.push({
             id: project.id,
             type: 'project',
-            label: `${project.name} (${project.client})`,
+            client: project.parentClient || project.client,
+            opportunity: project.name,
             badge: { text: TYPE_LABELS[project.type], className: TYPE_COLORS[project.type] },
             probability: project.probability,
             monthly,
@@ -122,7 +124,8 @@ export function MonthlyGrid({ projects }: Props) {
       result.push({
         id: 'grand-total',
         type: 'grand-total',
-        label: 'TOTAL',
+        client: 'TOTAL',
+        opportunity: '',
         monthly: grandMonthly,
         tcv: grandTcv,
         weighted: sumMonthly(grandMonthly),
@@ -162,7 +165,8 @@ export function MonthlyGrid({ projects }: Props) {
         result.push({
           id: segId,
           type: 'segment-header',
-          label: groupName,
+          client: groupName,
+          opportunity: '',
           monthly: emptyMonthly(),
           tcv: 0,
           weighted: 0,
@@ -187,7 +191,8 @@ export function MonthlyGrid({ projects }: Props) {
             result.push({
               id: clientId,
               type: 'client-header',
-              label: clientName,
+              client: clientName,
+              opportunity: '',
               monthly: { ...clientMonthly },
               tcv: clientTcv,
               weighted: sumMonthly(clientMonthly),
@@ -203,7 +208,8 @@ export function MonthlyGrid({ projects }: Props) {
               result.push({
                 id: p.id,
                 type: 'project',
-                label: p.name,
+                client: '',
+                opportunity: p.name,
                 badge: { text: TYPE_LABELS[p.type], className: TYPE_COLORS[p.type] },
                 probability: p.probability,
                 monthly: m,
@@ -222,7 +228,8 @@ export function MonthlyGrid({ projects }: Props) {
             result.push({
               id: p.id,
               type: 'project',
-              label: `${p.name} (${clientName})`,
+              client: clientName,
+              opportunity: p.name,
               badge: { text: TYPE_LABELS[p.type], className: TYPE_COLORS[p.type] },
               probability: p.probability,
               monthly: m,
@@ -248,7 +255,8 @@ export function MonthlyGrid({ projects }: Props) {
       result.push({
         id: 'grand-total',
         type: 'grand-total',
-        label: 'TOTAL',
+        client: 'TOTAL',
+        opportunity: '',
         monthly: grandMonthly,
         tcv: grandTcv,
         weighted: sumMonthly(grandMonthly),
@@ -332,7 +340,8 @@ export function MonthlyGrid({ projects }: Props) {
         <table className="w-full text-[11px] border-collapse">
           <thead>
             <tr className="border-b">
-              <th className="sticky left-0 bg-background z-10 text-left py-1.5 px-2 font-medium w-[200px] min-w-[200px]">Proyecto</th>
+              <th className="sticky left-0 bg-background z-10 text-left py-1.5 px-2 font-medium w-[140px] min-w-[140px]">Cliente</th>
+              <th className="text-left py-1.5 px-1.5 font-medium w-[150px] min-w-[150px]">Oportunidad</th>
               <th className="text-center py-1.5 px-1 font-medium w-[32px]">%</th>
               <th className="text-right py-1.5 px-1 font-medium w-[50px]">TCV</th>
               <th className="text-right py-1.5 px-1 font-semibold w-[50px]">Pond.</th>
@@ -363,6 +372,7 @@ export function MonthlyGrid({ projects }: Props) {
                   key={row.id}
                   className={`border-b border-gray-100 ${rowBg} ${rowFont} ${isTotal ? 'border-t-2 border-t-gray-300' : ''}`}
                 >
+                  {/* Cliente column */}
                   <td
                     className={`sticky left-0 z-10 py-1 px-1 whitespace-nowrap ${
                       isTotal ? 'bg-gray-100' :
@@ -384,12 +394,22 @@ export function MonthlyGrid({ projects }: Props) {
                           }
                         </button>
                       ) : (
-                        <span className="w-4 shrink-0" />
+                        row.depth > 0 ? <span className="w-4 shrink-0" /> : null
                       )}
-                      <span className="truncate">{row.label}</span>
+                      <span className="truncate">{row.client}</span>
                       {row.collapsible && isCollapsed && row.childCount && (
                         <span className="text-[9px] text-muted-foreground">({row.childCount})</span>
                       )}
+                    </div>
+                  </td>
+                  {/* Oportunidad column */}
+                  <td className={`py-1 px-1.5 whitespace-nowrap ${
+                    isTotal ? 'bg-gray-100' :
+                    isSegment ? 'bg-gray-50' :
+                    isClient ? 'bg-gray-50/50' : ''
+                  }`}>
+                    <div className="flex items-center gap-1">
+                      <span className="truncate">{row.opportunity}</span>
                       {row.badge && (
                         <Badge variant="secondary" className={`text-[9px] px-1 py-0 leading-tight ${row.badge.className}`}>
                           {row.badge.text}
