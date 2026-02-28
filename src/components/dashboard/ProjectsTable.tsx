@@ -208,8 +208,8 @@ export function ProjectsTable({ projects, onAdd, onUpdate, onDelete, onReset }: 
         <Table>
           <TableHeader>
             <TableRow>
-              <SortableHead label="Proyecto" sortKey="name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortableHead label="Cliente" sortKey="client" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortableHead label="Oportunidad" sortKey="name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortableHead label="Tipo" sortKey="type" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortableHead label="País" sortKey="country" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortableHead label="Prob" sortKey="probability" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} className="text-center" />
@@ -224,8 +224,8 @@ export function ProjectsTable({ projects, onAdd, onUpdate, onDelete, onReset }: 
           <TableBody>
             {filtered.map(p => (
               <TableRow key={p.id}>
-                <TableCell className="font-medium text-sm max-w-[180px] truncate">{p.name}</TableCell>
                 <TableCell className="text-sm">{p.client}</TableCell>
+                <TableCell className="font-medium text-sm max-w-[180px] truncate">{p.name}</TableCell>
                 <TableCell>
                   <Badge variant="secondary" className={`text-xs ${TYPE_COLORS[p.type]}`}>
                     {TYPE_LABELS[p.type]}
