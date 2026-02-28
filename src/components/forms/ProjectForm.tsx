@@ -19,6 +19,7 @@ import {
   MONTH_KEYS,
   MONTH_LABELS,
   COUNTRY_LABELS,
+  SUPPORTED_YEARS,
   MonthlyValues,
 } from '@/lib/types';
 
@@ -37,12 +38,26 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
   const [country, setCountry] = useState<Country>(initial?.country ?? 'spain');
   const [probability, setProbability] = useState(initial?.probability ?? 0.5);
   const [monthlyAmount, setMonthlyAmount] = useState(initial?.monthlyAmount ?? 0);
+  const [startYear, setStartYear] = useState(initial?.startYear ?? 2026);
   const [startMonth, setStartMonth] = useState<keyof MonthlyValues>(initial?.startMonth ?? 'jan');
   const [durationMonths, setDurationMonths] = useState(initial?.durationMonths ?? 6);
   const [product, setProduct] = useState(initial?.product ?? '');
 
   const tcv = monthlyAmount * durationMonths;
   const weighted = tcv * probability;
+
+  // Compute end period label
+  const startIdx = MONTH_KEYS.indexOf(startMonth);
+  const endAbsoluteIdx = startIdx + durationMonths - 1;
+  const endYearOffset = Math.floor(endAbsoluteIdx / 12);
+  const endMonthIdx = endAbsoluteIdx % 12;
+  const endYear = startYear + endYearOffset;
+  const endMonthLabel = MONTH_LABELS[MONTH_KEYS[endMonthIdx]];
+
+  // Max duration: can extend to end of 2027
+  const maxDuration = startYear === 2026
+    ? 24 - startIdx   // Jan 2026 → up to 24, Dec 2026 → up to 13
+    : 12 - startIdx;  // 2027 projects end in Dec 2027
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +70,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
       country,
       probability,
       tcv,
+      startYear,
       monthlyAmount,
       startMonth,
       durationMonths,
@@ -110,9 +126,9 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-6 gap-3">
         <div className="space-y-2">
-          <Label htmlFor="probability">Probabilidad (%)</Label>
+          <Label htmlFor="probability">Prob. (%)</Label>
           <Input
             id="probability"
             type="number"
@@ -138,7 +154,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="monthlyAmount">Importe mensual (EUR)</Label>
+          <Label htmlFor="monthlyAmount">Mensual (EUR)</Label>
           <Input
             id="monthlyAmount"
             type="number"
@@ -147,6 +163,17 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
             value={monthlyAmount}
             onChange={e => setMonthlyAmount(Number(e.target.value))}
           />
+        </div>
+        <div className="space-y-2">
+          <Label>Año</Label>
+          <Select value={String(startYear)} onValueChange={v => setStartYear(Number(v))}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SUPPORTED_YEARS.map(y => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label>Mes inicio</Label>
@@ -160,14 +187,14 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="duration">Meses de duración</Label>
+          <Label htmlFor="duration">Meses</Label>
           <Input
             id="duration"
             type="number"
             min={1}
-            max={12}
+            max={maxDuration}
             value={durationMonths}
-            onChange={e => setDurationMonths(Number(e.target.value))}
+            onChange={e => setDurationMonths(Math.min(Number(e.target.value), maxDuration))}
           />
         </div>
       </div>
@@ -197,7 +224,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Periodo</span>
-          <span>{MONTH_LABELS[startMonth]} → {MONTH_LABELS[MONTH_KEYS[Math.min(MONTH_KEYS.indexOf(startMonth) + durationMonths - 1, 11)]]}</span>
+          <span>{MONTH_LABELS[startMonth]} {startYear} → {endMonthLabel} {endYear}</span>
         </div>
       </div>
 

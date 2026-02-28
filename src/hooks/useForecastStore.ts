@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ForecastProject,
   ForecastStore,
+  ForecastYear,
   MonthlyValues,
   MONTH_KEYS,
-  computeMonthly,
-  computeWeightedTotal,
+  SUPPORTED_YEARS,
+  computeMonthlyByYear,
+  computeWeightedTotalByYear,
   computeTCV,
   generateId,
   ForecastType,
@@ -18,13 +20,22 @@ import { SEED_PROJECTS } from '@/lib/data/seed';
 
 const STORAGE_KEY = 'beai-forecast-v1';
 
+function migrateProjects(projects: ForecastProject[]): ForecastProject[] {
+  return projects.map(p => ({
+    ...p,
+    startYear: p.startYear ?? 2026,
+  }));
+}
+
 function loadStore(): ForecastStore {
   if (typeof window === 'undefined') return { projects: SEED_PROJECTS, version: 1 };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as ForecastStore;
-      if (parsed.projects && parsed.projects.length > 0) return parsed;
+      if (parsed.projects && parsed.projects.length > 0) {
+        return { ...parsed, projects: migrateProjects(parsed.projects) };
+      }
     }
   } catch { /* ignore */ }
   return { projects: SEED_PROJECTS, version: 1 };
@@ -47,6 +58,7 @@ export interface Filters {
 export function useForecastStore() {
   const [store, setStore] = useState<ForecastStore>({ projects: [], version: 1 });
   const [loaded, setLoaded] = useState(false);
+  const [selectedYear, setSelectedYear] = useState<ForecastYear>(2026);
 
   useEffect(() => {
     setStore(loadStore());
@@ -94,23 +106,25 @@ export function useForecastStore() {
     });
   }, [store.projects]);
 
-  // Computed aggregations
+  // Computed aggregations (year-aware)
   const stats = useMemo(() => {
     const projects = store.projects;
+    const computeW = (p: ForecastProject) => computeWeightedTotalByYear(p, selectedYear);
+    const computeM = (p: ForecastProject) => computeMonthlyByYear(p, selectedYear);
 
     const backlog = projects.filter(p => p.type === 'backlog');
     const pipeline = projects.filter(p => p.type === 'pipeline');
     const products = projects.filter(p => p.type === 'product');
 
-    const totalBacklog = backlog.reduce((sum, p) => sum + computeWeightedTotal(p), 0);
-    const totalPipelineWeighted = pipeline.reduce((sum, p) => sum + computeWeightedTotal(p), 0);
+    const totalBacklog = backlog.reduce((sum, p) => sum + computeW(p), 0);
+    const totalPipelineWeighted = pipeline.reduce((sum, p) => sum + computeW(p), 0);
     const totalPipelineTCV = pipeline.reduce((sum, p) => sum + computeTCV(p), 0);
-    const totalProducts = products.reduce((sum, p) => sum + computeWeightedTotal(p), 0);
+    const totalProducts = products.reduce((sum, p) => sum + computeW(p), 0);
     const totalForecast = totalBacklog + totalPipelineWeighted + totalProducts;
 
     const ignisRevenue = projects
       .filter(p => p.segment === 'ignis')
-      .reduce((sum, p) => sum + computeWeightedTotal(p), 0);
+      .reduce((sum, p) => sum + computeW(p), 0);
     const ignisPercent = totalForecast > 0 ? (ignisRevenue / totalForecast) * 100 : 0;
 
     // Monthly totals
@@ -120,35 +134,42 @@ export function useForecastStore() {
     const monthlyProducts: MonthlyValues = { ...monthlyTotals };
 
     backlog.forEach(p => {
-      const m = computeMonthly(p);
+      const m = computeM(p);
       MONTH_KEYS.forEach(k => { monthlyBacklog[k] += m[k]; monthlyTotals[k] += m[k]; });
     });
     pipeline.forEach(p => {
-      const m = computeMonthly(p);
+      const m = computeM(p);
       MONTH_KEYS.forEach(k => { monthlyPipeline[k] += m[k]; monthlyTotals[k] += m[k]; });
     });
     products.forEach(p => {
-      const m = computeMonthly(p);
+      const m = computeM(p);
       MONTH_KEYS.forEach(k => { monthlyProducts[k] += m[k]; monthlyTotals[k] += m[k]; });
     });
 
-    // By country
+    // By country (year-filtered)
     const byCountry: Record<string, number> = {};
     projects.forEach(p => {
-      const val = computeWeightedTotal(p);
-      byCountry[p.country] = (byCountry[p.country] || 0) + val;
+      const val = computeW(p);
+      if (val > 0) byCountry[p.country] = (byCountry[p.country] || 0) + val;
     });
 
-    // By client
+    // By client (year-filtered)
     const byClient: Record<string, number> = {};
     projects.forEach(p => {
       const key = p.parentClient || p.client;
-      const val = computeWeightedTotal(p);
-      byClient[key] = (byClient[key] || 0) + val;
+      const val = computeW(p);
+      if (val > 0) byClient[key] = (byClient[key] || 0) + val;
     });
 
-    // Unique clients
     const clients = [...new Set(projects.map(p => p.client))].sort();
+
+    // Check which years have data
+    const activeYears = SUPPORTED_YEARS.filter(y =>
+      projects.some(p => {
+        const m = computeMonthlyByYear(p, y);
+        return MONTH_KEYS.some(k => m[k] > 0);
+      })
+    );
 
     return {
       totalBacklog,
@@ -166,13 +187,16 @@ export function useForecastStore() {
       byClient,
       clients,
       projectCount: projects.length,
+      activeYears,
     };
-  }, [store.projects]);
+  }, [store.projects, selectedYear]);
 
   return {
     projects: store.projects,
     loaded,
     stats,
+    selectedYear,
+    setSelectedYear,
     addProject,
     updateProject,
     deleteProject,

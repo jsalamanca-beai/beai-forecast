@@ -37,6 +37,9 @@ export const COUNTRY_LABELS: Record<Country, string> = {
   other: 'Otro',
 };
 
+export const SUPPORTED_YEARS = [2026, 2027] as const;
+export type ForecastYear = typeof SUPPORTED_YEARS[number];
+
 export interface ForecastProject {
   id: string;
   name: string;
@@ -47,6 +50,7 @@ export interface ForecastProject {
   country: Country;
   probability: number;
   tcv: number;
+  startYear: number;
   startMonth: keyof MonthlyValues;
   durationMonths: number;
   monthlyAmount: number;
@@ -73,6 +77,29 @@ export function computeMonthly(project: ForecastProject): MonthlyValues {
 
 export function computeWeightedTotal(project: ForecastProject): number {
   const m = computeMonthly(project);
+  return MONTH_KEYS.reduce((sum, k) => sum + m[k], 0);
+}
+
+export function computeMonthlyByYear(project: ForecastProject, year: ForecastYear): MonthlyValues {
+  const monthly: MonthlyValues = { jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0 };
+  const startIdx = MONTH_KEYS.indexOf(project.startMonth);
+  if (startIdx === -1) return monthly;
+  const projectYear = project.startYear ?? 2026;
+
+  for (let i = 0; i < project.durationMonths; i++) {
+    const absoluteIdx = startIdx + i;
+    const yearOffset = Math.floor(absoluteIdx / 12);
+    const monthIdx = absoluteIdx % 12;
+    const currentYear = projectYear + yearOffset;
+    if (currentYear === year) {
+      monthly[MONTH_KEYS[monthIdx]] = project.monthlyAmount * project.probability;
+    }
+  }
+  return monthly;
+}
+
+export function computeWeightedTotalByYear(project: ForecastProject, year: ForecastYear): number {
+  const m = computeMonthlyByYear(project, year);
   return MONTH_KEYS.reduce((sum, k) => sum + m[k], 0);
 }
 

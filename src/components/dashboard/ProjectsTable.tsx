@@ -60,7 +60,7 @@ function getSortValue(p: ForecastProject, key: SortKey): number | string {
     case 'country': return p.country;
     case 'probability': return p.probability;
     case 'monthlyAmount': return p.monthlyAmount;
-    case 'startMonth': return MONTH_KEYS.indexOf(p.startMonth);
+    case 'startMonth': return (p.startYear ?? 2026) * 12 + MONTH_KEYS.indexOf(p.startMonth);
     case 'durationMonths': return p.durationMonths;
     case 'tcv': return computeTCV(p);
     case 'weighted': return computeWeightedTotal(p);
@@ -238,7 +238,7 @@ export function ProjectsTable({ projects, onAdd, onUpdate, onDelete, onReset }: 
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmt(p.monthlyAmount)}</TableCell>
-                <TableCell className="text-center text-xs">{MONTH_LABELS[p.startMonth]}</TableCell>
+                <TableCell className="text-center text-xs">{MONTH_LABELS[p.startMonth]} {String(p.startYear ?? 2026).slice(-2)}</TableCell>
                 <TableCell className="text-center text-sm">{p.durationMonths}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmt(computeTCV(p))}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums font-semibold">{fmt(computeWeightedTotal(p))}</TableCell>

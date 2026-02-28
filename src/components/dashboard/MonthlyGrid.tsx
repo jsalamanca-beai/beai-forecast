@@ -14,15 +14,19 @@ import { ChevronRight, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import {
   ForecastProject,
   ForecastType,
+  ForecastYear,
   MONTH_KEYS,
   MONTH_LABELS,
-  computeMonthly,
+  SUPPORTED_YEARS,
+  computeMonthlyByYear,
   computeTCV,
   MonthlyValues,
 } from '@/lib/types';
 
 interface Props {
   projects: ForecastProject[];
+  selectedYear: ForecastYear;
+  onYearChange: (year: ForecastYear) => void;
 }
 
 const TYPE_COLORS: Record<ForecastType, string> = {
@@ -71,7 +75,7 @@ const addMonthly = (target: MonthlyValues, source: MonthlyValues) => {
 };
 const sumMonthly = (m: MonthlyValues): number => MONTH_KEYS.reduce((s, k) => s + m[k], 0);
 
-export function MonthlyGrid({ projects }: Props) {
+export function MonthlyGrid({ projects, selectedYear, onYearChange }: Props) {
   const [filterType, setFilterType] = useState<ForecastType | 'all'>('all');
   const [groupBy, setGroupBy] = useState<'segment' | 'type' | 'flat'>('segment');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -87,21 +91,26 @@ export function MonthlyGrid({ projects }: Props) {
   const collapseAll = useCallback(() => {
     setCollapsed(new Set(rows.filter(r => r.collapsible).map(r => r.id)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, filterType, groupBy]);
+  }, [projects, filterType, groupBy, selectedYear]);
 
   const expandAll = useCallback(() => {
     setCollapsed(new Set());
   }, []);
 
   const rows = useMemo(() => {
-    const filtered = filterType === 'all' ? projects : projects.filter(p => p.type === filterType);
+    const typeFiltered = filterType === 'all' ? projects : projects.filter(p => p.type === filterType);
+    // Only include projects that have revenue in the selected year
+    const filtered = typeFiltered.filter(p => {
+      const m = computeMonthlyByYear(p, selectedYear);
+      return MONTH_KEYS.some(k => m[k] > 0);
+    });
     const result: GridRow[] = [];
 
     if (groupBy === 'flat') {
       const grandMonthly = emptyMonthly();
       let grandTcv = 0;
       filtered
-        .map(p => ({ project: p, monthly: computeMonthly(p) }))
+        .map(p => ({ project: p, monthly: computeMonthlyByYear(p, selectedYear) }))
         .sort((a, b) => sumMonthly(b.monthly) - sumMonthly(a.monthly))
         .forEach(({ project, monthly }) => {
           addMonthly(grandMonthly, monthly);
@@ -156,8 +165,8 @@ export function MonthlyGrid({ projects }: Props) {
         });
 
         const sortedClients = [...byClient.entries()].sort((a, b) => {
-          const totalA = a[1].reduce((s, p) => s + sumMonthly(computeMonthly(p)), 0);
-          const totalB = b[1].reduce((s, p) => s + sumMonthly(computeMonthly(p)), 0);
+          const totalA = a[1].reduce((s, p) => s + sumMonthly(computeMonthlyByYear(p, selectedYear)), 0);
+          const totalB = b[1].reduce((s, p) => s + sumMonthly(computeMonthlyByYear(p, selectedYear)), 0);
           return totalB - totalA;
         });
 
@@ -183,7 +192,7 @@ export function MonthlyGrid({ projects }: Props) {
 
           if (clientProjects.length > 1) {
             clientProjects.forEach(p => {
-              const m = computeMonthly(p);
+              const m = computeMonthlyByYear(p, selectedYear);
               addMonthly(clientMonthly, m);
               clientTcv += computeTCV(p);
             });
@@ -203,7 +212,7 @@ export function MonthlyGrid({ projects }: Props) {
             });
 
             clientProjects.forEach(p => {
-              const m = computeMonthly(p);
+              const m = computeMonthlyByYear(p, selectedYear);
               const ptcv = computeTCV(p);
               result.push({
                 id: p.id,
@@ -222,7 +231,7 @@ export function MonthlyGrid({ projects }: Props) {
             });
           } else {
             const p = clientProjects[0];
-            const m = computeMonthly(p);
+            const m = computeMonthlyByYear(p, selectedYear);
             addMonthly(clientMonthly, m);
             clientTcv = computeTCV(p);
             result.push({
@@ -266,7 +275,7 @@ export function MonthlyGrid({ projects }: Props) {
     }
 
     return result;
-  }, [projects, filterType, groupBy]);
+  }, [projects, filterType, groupBy, selectedYear]);
 
   // Filter visible rows based on collapsed state
   const visibleRows = useMemo(() => {
@@ -300,7 +309,24 @@ export function MonthlyGrid({ projects }: Props) {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <CardTitle className="text-base">Vista mensual (Ene - Dic 2026)</CardTitle>
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-base">Vista mensual {selectedYear}</CardTitle>
+            <div className="flex rounded-md border overflow-hidden">
+              {SUPPORTED_YEARS.map(y => (
+                <button
+                  key={y}
+                  onClick={() => onYearChange(y)}
+                  className={`px-3 py-1 text-xs font-medium transition-colors ${
+                    selectedYear === y
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background hover:bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex gap-2 items-center">
             {hasCollapsible && (
               <div className="flex gap-1">

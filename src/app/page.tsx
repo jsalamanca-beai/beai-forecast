@@ -8,12 +8,16 @@ import { CountryBar } from '@/components/dashboard/CountryBar';
 import { TopOpportunities } from '@/components/dashboard/TopOpportunities';
 import { ProjectsTable } from '@/components/dashboard/ProjectsTable';
 import { MonthlyGrid } from '@/components/dashboard/MonthlyGrid';
+import { Button } from '@/components/ui/button';
+import { Download } from 'lucide-react';
 
 export default function Home() {
   const {
     projects,
     loaded,
     stats,
+    selectedYear,
+    setSelectedYear,
     addProject,
     updateProject,
     deleteProject,
@@ -28,19 +32,29 @@ export default function Home() {
     );
   }
 
+  async function handleExport() {
+    const { exportToExcel } = await import('@/lib/exportExcel');
+    exportToExcel(projects);
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">BeAI Forecast 2026</h1>
+          <h1 className="text-2xl font-bold tracking-tight">BeAI Forecast 2026-2027</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Dashboard de operaciones &middot; {stats.projectCount} proyectos
+            Dashboard de operaciones &middot; {stats.projectCount} proyectos &middot; Vista {selectedYear}
           </p>
         </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <p>Datos actualizados</p>
-          <p className="font-mono">{new Date().toLocaleDateString('es-ES')}</p>
+        <div className="flex items-center gap-3">
+          <Button size="sm" variant="outline" onClick={handleExport} className="h-8 text-xs">
+            <Download className="w-3.5 h-3.5 mr-1" /> Exportar Excel
+          </Button>
+          <div className="text-right text-xs text-muted-foreground">
+            <p>Datos actualizados</p>
+            <p className="font-mono">{new Date().toLocaleDateString('es-ES')}</p>
+          </div>
         </div>
       </div>
 
@@ -58,6 +72,7 @@ export default function Home() {
         monthlyBacklog={stats.monthlyBacklog}
         monthlyPipeline={stats.monthlyPipeline}
         monthlyProducts={stats.monthlyProducts}
+        selectedYear={selectedYear}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -70,7 +85,11 @@ export default function Home() {
       </div>
 
       {/* Monthly grid view (Excel-like) */}
-      <MonthlyGrid projects={projects} />
+      <MonthlyGrid
+        projects={projects}
+        selectedYear={selectedYear}
+        onYearChange={setSelectedYear}
+      />
 
       {/* Full table with CRUD */}
       <ProjectsTable

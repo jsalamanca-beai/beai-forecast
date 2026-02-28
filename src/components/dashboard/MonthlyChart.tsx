@@ -10,9 +10,10 @@ interface Props {
   monthlyBacklog: MonthlyValues;
   monthlyPipeline: MonthlyValues;
   monthlyProducts: MonthlyValues;
+  selectedYear?: number;
 }
 
-export function MonthlyChart({ monthlyBacklog, monthlyPipeline, monthlyProducts }: Props) {
+export function MonthlyChart({ monthlyBacklog, monthlyPipeline, monthlyProducts, selectedYear = 2026 }: Props) {
   const data = MONTH_KEYS.map(k => ({
     month: MONTH_LABELS[k],
     Backlog: Math.round(monthlyBacklog[k]),
@@ -23,7 +24,7 @@ export function MonthlyChart({ monthlyBacklog, monthlyPipeline, monthlyProducts 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Revenue mensual 2026</CardTitle>
+        <CardTitle className="text-base">Revenue mensual {selectedYear}</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
