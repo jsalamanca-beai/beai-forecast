@@ -17,6 +17,7 @@ import {
   MONTH_KEYS,
   MONTH_LABELS,
   computeMonthly,
+  computeTCV,
   MonthlyValues,
 } from '@/lib/types';
 
@@ -55,7 +56,8 @@ interface GridRow {
   badge?: { text: string; className: string };
   probability?: number;
   monthly: MonthlyValues;
-  total: number;
+  tcv: number;
+  weighted: number;
   depth: number;
   parentId?: string; // client-header id for projects, segment id for clients
   collapsible: boolean; // can be toggled
@@ -96,11 +98,14 @@ export function MonthlyGrid({ projects }: Props) {
 
     if (groupBy === 'flat') {
       const grandMonthly = emptyMonthly();
+      let grandTcv = 0;
       filtered
         .map(p => ({ project: p, monthly: computeMonthly(p) }))
         .sort((a, b) => sumMonthly(b.monthly) - sumMonthly(a.monthly))
         .forEach(({ project, monthly }) => {
           addMonthly(grandMonthly, monthly);
+          const ptcv = computeTCV(project);
+          grandTcv += ptcv;
           result.push({
             id: project.id,
             type: 'project',
@@ -108,7 +113,8 @@ export function MonthlyGrid({ projects }: Props) {
             badge: { text: TYPE_LABELS[project.type], className: TYPE_COLORS[project.type] },
             probability: project.probability,
             monthly,
-            total: sumMonthly(monthly),
+            tcv: ptcv,
+            weighted: sumMonthly(monthly),
             depth: 0,
             collapsible: false,
           });
@@ -118,7 +124,8 @@ export function MonthlyGrid({ projects }: Props) {
         type: 'grand-total',
         label: 'TOTAL',
         monthly: grandMonthly,
-        total: sumMonthly(grandMonthly),
+        tcv: grandTcv,
+        weighted: sumMonthly(grandMonthly),
         depth: 0,
         collapsible: false,
       });
@@ -131,10 +138,12 @@ export function MonthlyGrid({ projects }: Props) {
       });
 
       const grandMonthly = emptyMonthly();
+      let grandTcv = 0;
 
       for (const [groupName, groupProjects] of groups) {
         const segId = `seg-${groupName}`;
         const groupMonthly = emptyMonthly();
+        let groupTcv = 0;
 
         const byClient = new Map<string, ForecastProject[]>();
         groupProjects.forEach(p => {
@@ -155,7 +164,8 @@ export function MonthlyGrid({ projects }: Props) {
           type: 'segment-header',
           label: groupName,
           monthly: emptyMonthly(),
-          total: 0,
+          tcv: 0,
+          weighted: 0,
           depth: 0,
           collapsible: true,
           childCount: sortedClients.length,
@@ -165,12 +175,13 @@ export function MonthlyGrid({ projects }: Props) {
         for (const [clientName, clientProjects] of sortedClients) {
           const clientId = `${segId}-${clientName}`;
           const clientMonthly = emptyMonthly();
+          let clientTcv = 0;
 
           if (clientProjects.length > 1) {
-            // Client header (collapsible to hide its projects)
             clientProjects.forEach(p => {
               const m = computeMonthly(p);
               addMonthly(clientMonthly, m);
+              clientTcv += computeTCV(p);
             });
 
             result.push({
@@ -178,7 +189,8 @@ export function MonthlyGrid({ projects }: Props) {
               type: 'client-header',
               label: clientName,
               monthly: { ...clientMonthly },
-              total: sumMonthly(clientMonthly),
+              tcv: clientTcv,
+              weighted: sumMonthly(clientMonthly),
               depth: 1,
               parentId: segId,
               collapsible: true,
@@ -187,6 +199,7 @@ export function MonthlyGrid({ projects }: Props) {
 
             clientProjects.forEach(p => {
               const m = computeMonthly(p);
+              const ptcv = computeTCV(p);
               result.push({
                 id: p.id,
                 type: 'project',
@@ -194,7 +207,8 @@ export function MonthlyGrid({ projects }: Props) {
                 badge: { text: TYPE_LABELS[p.type], className: TYPE_COLORS[p.type] },
                 probability: p.probability,
                 monthly: m,
-                total: sumMonthly(m),
+                tcv: ptcv,
+                weighted: sumMonthly(m),
                 depth: 2,
                 parentId: clientId,
                 collapsible: false,
@@ -204,6 +218,7 @@ export function MonthlyGrid({ projects }: Props) {
             const p = clientProjects[0];
             const m = computeMonthly(p);
             addMonthly(clientMonthly, m);
+            clientTcv = computeTCV(p);
             result.push({
               id: p.id,
               type: 'project',
@@ -211,18 +226,22 @@ export function MonthlyGrid({ projects }: Props) {
               badge: { text: TYPE_LABELS[p.type], className: TYPE_COLORS[p.type] },
               probability: p.probability,
               monthly: m,
-              total: sumMonthly(m),
+              tcv: clientTcv,
+              weighted: sumMonthly(m),
               depth: 1,
               parentId: segId,
               collapsible: false,
             });
           }
 
+          groupTcv += clientTcv;
           addMonthly(groupMonthly, clientMonthly);
         }
 
         result[segIdx].monthly = { ...groupMonthly };
-        result[segIdx].total = sumMonthly(groupMonthly);
+        result[segIdx].tcv = groupTcv;
+        result[segIdx].weighted = sumMonthly(groupMonthly);
+        grandTcv += groupTcv;
         addMonthly(grandMonthly, groupMonthly);
       }
 
@@ -231,7 +250,8 @@ export function MonthlyGrid({ projects }: Props) {
         type: 'grand-total',
         label: 'TOTAL',
         monthly: grandMonthly,
-        total: sumMonthly(grandMonthly),
+        tcv: grandTcv,
+        weighted: sumMonthly(grandMonthly),
         depth: 0,
         collapsible: false,
       });
@@ -313,8 +333,9 @@ export function MonthlyGrid({ projects }: Props) {
           <thead>
             <tr className="border-b">
               <th className="sticky left-0 bg-background z-10 text-left py-1.5 px-2 font-medium w-[200px] min-w-[200px]">Proyecto</th>
-              <th className="text-center py-1.5 px-1 font-medium w-[36px]">%</th>
-              <th className="text-right py-1.5 px-1.5 font-semibold w-[52px]">Total</th>
+              <th className="text-center py-1.5 px-1 font-medium w-[32px]">%</th>
+              <th className="text-right py-1.5 px-1 font-medium w-[50px]">TCV</th>
+              <th className="text-right py-1.5 px-1 font-semibold w-[50px]">Pond.</th>
               {MONTH_KEYS.map(k => (
                 <th key={k} className="text-right py-1.5 px-1 font-medium w-[48px]">{MONTH_LABELS[k]}</th>
               ))}
@@ -387,8 +408,11 @@ export function MonthlyGrid({ projects }: Props) {
                       </span>
                     )}
                   </td>
-                  <td className="text-right py-1 px-1.5 font-semibold tabular-nums">
-                    {fmtTotalK(row.total)}
+                  <td className="text-right py-1 px-1.5 tabular-nums">
+                    {fmtTotalK(row.tcv)}
+                  </td>
+                  <td className={`text-right py-1 px-1.5 tabular-nums ${isTotal || isSegment ? 'font-bold' : 'font-semibold'}`}>
+                    {fmtTotalK(row.weighted)}
                   </td>
                   {MONTH_KEYS.map(k => {
                     const val = row.monthly[k];
