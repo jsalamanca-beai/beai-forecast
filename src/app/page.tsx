@@ -7,6 +7,7 @@ import { SegmentDonut } from '@/components/dashboard/SegmentDonut';
 import { CountryBar } from '@/components/dashboard/CountryBar';
 import { TopOpportunities } from '@/components/dashboard/TopOpportunities';
 import { ProjectsTable } from '@/components/dashboard/ProjectsTable';
+import { MonthlyGrid } from '@/components/dashboard/MonthlyGrid';
 
 export default function Home() {
   const {
@@ -67,6 +68,9 @@ export default function Home() {
         <CountryBar byCountry={stats.byCountry} />
         <TopOpportunities projects={projects} />
       </div>
+
+      {/* Monthly grid view (Excel-like) */}
+      <MonthlyGrid projects={projects} />
 
       {/* Full table with CRUD */}
       <ProjectsTable
