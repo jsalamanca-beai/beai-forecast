@@ -110,7 +110,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="space-y-2">
           <Label htmlFor="probability">Probabilidad (%)</Label>
           <Input
@@ -121,6 +121,20 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
             step={5}
             value={probability * 100}
             onChange={e => setProbability(Number(e.target.value) / 100)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tcvInput">TCV total (EUR)</Label>
+          <Input
+            id="tcvInput"
+            type="number"
+            min={0}
+            step={1000}
+            value={Math.round(monthlyAmount * durationMonths)}
+            onChange={e => {
+              const newTcv = Number(e.target.value);
+              setMonthlyAmount(durationMonths > 0 ? Math.round(newTcv / durationMonths) : newTcv);
+            }}
           />
         </div>
         <div className="space-y-2">
