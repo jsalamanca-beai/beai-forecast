@@ -1,18 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChevronRight, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import {
   ForecastProject,
   ForecastType,
-  Segment,
   MONTH_KEYS,
   MONTH_LABELS,
   computeMonthly,
@@ -35,49 +36,65 @@ const TYPE_LABELS: Record<ForecastType, string> = {
   product: 'Producto',
 };
 
-function fmt(n: number): string {
+function fmtK(n: number): string {
   if (n === 0) return '';
-  return n.toLocaleString('es-ES', { maximumFractionDigits: 0 });
+  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1).replace('.', ',') + 'K';
+  return n.toFixed(0);
 }
 
-function fmtTotal(n: number): string {
-  return n.toLocaleString('es-ES', { maximumFractionDigits: 0 });
+function fmtTotalK(n: number): string {
+  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1).replace('.', ',') + 'K';
+  return n.toFixed(0);
 }
 
-function cellBg(value: number, max: number): string {
-  if (value === 0 || max === 0) return '';
-  const intensity = Math.min(value / max, 1);
-  const alpha = Math.round(intensity * 20 + 5);
-  return `bg-blue-${alpha > 15 ? '100' : '50'}`;
-}
-
-// Group projects by segment > client
-interface GroupedRow {
-  type: 'segment-header' | 'client-header' | 'project' | 'segment-total' | 'grand-total';
+// Row model
+interface GridRow {
+  id: string; // unique key for collapse tracking
+  type: 'segment-header' | 'client-header' | 'project' | 'grand-total';
   label: string;
   badge?: { text: string; className: string };
   probability?: number;
   monthly: MonthlyValues;
   total: number;
   depth: number;
+  parentId?: string; // client-header id for projects, segment id for clients
+  collapsible: boolean; // can be toggled
+  childCount?: number;
 }
+
+const emptyMonthly = (): MonthlyValues => ({ jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0 });
+const addMonthly = (target: MonthlyValues, source: MonthlyValues) => {
+  MONTH_KEYS.forEach(k => { target[k] += source[k]; });
+};
+const sumMonthly = (m: MonthlyValues): number => MONTH_KEYS.reduce((s, k) => s + m[k], 0);
 
 export function MonthlyGrid({ projects }: Props) {
   const [filterType, setFilterType] = useState<ForecastType | 'all'>('all');
   const [groupBy, setGroupBy] = useState<'segment' | 'type' | 'flat'>('segment');
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggleCollapse = useCallback((id: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    setCollapsed(new Set(rows.filter(r => r.collapsible).map(r => r.id)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, filterType, groupBy]);
+
+  const expandAll = useCallback(() => {
+    setCollapsed(new Set());
+  }, []);
 
   const rows = useMemo(() => {
     const filtered = filterType === 'all' ? projects : projects.filter(p => p.type === filterType);
-    const result: GroupedRow[] = [];
-
-    const emptyMonthly = (): MonthlyValues => ({ jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0 });
-    const addMonthly = (target: MonthlyValues, source: MonthlyValues) => {
-      MONTH_KEYS.forEach(k => { target[k] += source[k]; });
-    };
-    const sumMonthly = (m: MonthlyValues): number => MONTH_KEYS.reduce((s, k) => s + m[k], 0);
+    const result: GridRow[] = [];
 
     if (groupBy === 'flat') {
-      // Simple flat list sorted by total desc
       const grandMonthly = emptyMonthly();
       filtered
         .map(p => ({ project: p, monthly: computeMonthly(p) }))
@@ -85,6 +102,7 @@ export function MonthlyGrid({ projects }: Props) {
         .forEach(({ project, monthly }) => {
           addMonthly(grandMonthly, monthly);
           result.push({
+            id: project.id,
             type: 'project',
             label: `${project.name} (${project.client})`,
             badge: { text: TYPE_LABELS[project.type], className: TYPE_COLORS[project.type] },
@@ -92,20 +110,20 @@ export function MonthlyGrid({ projects }: Props) {
             monthly,
             total: sumMonthly(monthly),
             depth: 0,
+            collapsible: false,
           });
         });
       result.push({
+        id: 'grand-total',
         type: 'grand-total',
         label: 'TOTAL',
         monthly: grandMonthly,
         total: sumMonthly(grandMonthly),
         depth: 0,
+        collapsible: false,
       });
     } else {
-      // Group by segment or type
-      const groupKey = groupBy === 'segment' ? 'segment' : 'type';
       const groups = new Map<string, ForecastProject[]>();
-
       filtered.forEach(p => {
         const key = groupBy === 'segment' ? (p.segment === 'ignis' ? 'Ignis' : 'No Ignis') : TYPE_LABELS[p.type];
         if (!groups.has(key)) groups.set(key, []);
@@ -115,9 +133,9 @@ export function MonthlyGrid({ projects }: Props) {
       const grandMonthly = emptyMonthly();
 
       for (const [groupName, groupProjects] of groups) {
+        const segId = `seg-${groupName}`;
         const groupMonthly = emptyMonthly();
 
-        // Sub-group by client within each group
         const byClient = new Map<string, ForecastProject[]>();
         groupProjects.forEach(p => {
           const ck = p.parentClient || p.client;
@@ -125,39 +143,52 @@ export function MonthlyGrid({ projects }: Props) {
           byClient.get(ck)!.push(p);
         });
 
-        // Sort clients by total desc
         const sortedClients = [...byClient.entries()].sort((a, b) => {
-          const totalA = a[1].reduce((s, p) => { const m = computeMonthly(p); return s + MONTH_KEYS.reduce((ss, k) => ss + m[k], 0); }, 0);
-          const totalB = b[1].reduce((s, p) => { const m = computeMonthly(p); return s + MONTH_KEYS.reduce((ss, k) => ss + m[k], 0); }, 0);
+          const totalA = a[1].reduce((s, p) => s + sumMonthly(computeMonthly(p)), 0);
+          const totalB = b[1].reduce((s, p) => s + sumMonthly(computeMonthly(p)), 0);
           return totalB - totalA;
         });
 
+        // Segment header placeholder
         result.push({
+          id: segId,
           type: 'segment-header',
           label: groupName,
-          monthly: emptyMonthly(), // will be filled
+          monthly: emptyMonthly(),
           total: 0,
           depth: 0,
+          collapsible: true,
+          childCount: sortedClients.length,
         });
-        const segHeaderIdx = result.length - 1;
+        const segIdx = result.length - 1;
 
         for (const [clientName, clientProjects] of sortedClients) {
+          const clientId = `${segId}-${clientName}`;
           const clientMonthly = emptyMonthly();
 
           if (clientProjects.length > 1) {
-            result.push({
-              type: 'client-header',
-              label: clientName,
-              monthly: emptyMonthly(),
-              total: 0,
-              depth: 1,
-            });
-            const clientHeaderIdx = result.length - 1;
-
+            // Client header (collapsible to hide its projects)
             clientProjects.forEach(p => {
               const m = computeMonthly(p);
               addMonthly(clientMonthly, m);
+            });
+
+            result.push({
+              id: clientId,
+              type: 'client-header',
+              label: clientName,
+              monthly: { ...clientMonthly },
+              total: sumMonthly(clientMonthly),
+              depth: 1,
+              parentId: segId,
+              collapsible: true,
+              childCount: clientProjects.length,
+            });
+
+            clientProjects.forEach(p => {
+              const m = computeMonthly(p);
               result.push({
+                id: p.id,
                 type: 'project',
                 label: p.name,
                 badge: { text: TYPE_LABELS[p.type], className: TYPE_COLORS[p.type] },
@@ -165,16 +196,16 @@ export function MonthlyGrid({ projects }: Props) {
                 monthly: m,
                 total: sumMonthly(m),
                 depth: 2,
+                parentId: clientId,
+                collapsible: false,
               });
             });
-
-            result[clientHeaderIdx].monthly = { ...clientMonthly };
-            result[clientHeaderIdx].total = sumMonthly(clientMonthly);
           } else {
             const p = clientProjects[0];
             const m = computeMonthly(p);
             addMonthly(clientMonthly, m);
             result.push({
+              id: p.id,
               type: 'project',
               label: `${p.name} (${clientName})`,
               badge: { text: TYPE_LABELS[p.type], className: TYPE_COLORS[p.type] },
@@ -182,30 +213,49 @@ export function MonthlyGrid({ projects }: Props) {
               monthly: m,
               total: sumMonthly(m),
               depth: 1,
+              parentId: segId,
+              collapsible: false,
             });
           }
 
           addMonthly(groupMonthly, clientMonthly);
         }
 
-        result[segHeaderIdx].monthly = { ...groupMonthly };
-        result[segHeaderIdx].total = sumMonthly(groupMonthly);
+        result[segIdx].monthly = { ...groupMonthly };
+        result[segIdx].total = sumMonthly(groupMonthly);
         addMonthly(grandMonthly, groupMonthly);
       }
 
       result.push({
+        id: 'grand-total',
         type: 'grand-total',
         label: 'TOTAL',
         monthly: grandMonthly,
         total: sumMonthly(grandMonthly),
         depth: 0,
+        collapsible: false,
       });
     }
 
     return result;
   }, [projects, filterType, groupBy]);
 
-  // Find max monthly value for heatmap
+  // Filter visible rows based on collapsed state
+  const visibleRows = useMemo(() => {
+    return rows.filter(row => {
+      if (!row.parentId) return true;
+      // Check if any ancestor is collapsed
+      let pid: string | undefined = row.parentId;
+      while (pid) {
+        if (collapsed.has(pid)) return false;
+        const parent = rows.find(r => r.id === pid);
+        pid = parent?.parentId;
+      }
+      return true;
+    });
+  }, [rows, collapsed]);
+
+  // Max for heatmap
   const maxMonthly = useMemo(() => {
     let max = 0;
     rows.forEach(r => {
@@ -216,14 +266,26 @@ export function MonthlyGrid({ projects }: Props) {
     return max;
   }, [rows]);
 
+  const hasCollapsible = rows.some(r => r.collapsible);
+
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-base">Vista mensual (Ene - Dic 2026)</CardTitle>
-          <div className="flex gap-2">
-            <Select value={groupBy} onValueChange={v => setGroupBy(v as 'segment' | 'type' | 'flat')}>
-              <SelectTrigger className="w-[150px] h-8 text-xs">
+          <div className="flex gap-2 items-center">
+            {hasCollapsible && (
+              <div className="flex gap-1">
+                <Button size="sm" variant="ghost" className="h-7 text-[11px] px-2" onClick={collapseAll}>
+                  <ChevronsUpDown className="w-3 h-3 mr-1" /> Plegar
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-[11px] px-2" onClick={expandAll}>
+                  <ChevronsUpDown className="w-3 h-3 mr-1" /> Desplegar
+                </Button>
+              </div>
+            )}
+            <Select value={groupBy} onValueChange={v => { setGroupBy(v as 'segment' | 'type' | 'flat'); setCollapsed(new Set()); }}>
+              <SelectTrigger className="w-[150px] h-7 text-[11px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -233,7 +295,7 @@ export function MonthlyGrid({ projects }: Props) {
               </SelectContent>
             </Select>
             <Select value={filterType} onValueChange={v => setFilterType(v as ForecastType | 'all')}>
-              <SelectTrigger className="w-[120px] h-8 text-xs">
+              <SelectTrigger className="w-[110px] h-7 text-[11px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -246,83 +308,109 @@ export function MonthlyGrid({ projects }: Props) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="sticky left-0 bg-background z-10 min-w-[220px]">Proyecto</TableHead>
-              <TableHead className="text-center w-12">Prob</TableHead>
-              <TableHead className="text-right font-semibold min-w-[80px]">Total</TableHead>
+      <CardContent className="overflow-x-auto px-3">
+        <table className="w-full text-[11px] border-collapse">
+          <thead>
+            <tr className="border-b">
+              <th className="sticky left-0 bg-background z-10 text-left py-1.5 px-2 font-medium w-[200px] min-w-[200px]">Proyecto</th>
+              <th className="text-center py-1.5 px-1 font-medium w-[36px]">%</th>
+              <th className="text-right py-1.5 px-1.5 font-semibold w-[52px]">Total</th>
               {MONTH_KEYS.map(k => (
-                <TableHead key={k} className="text-right min-w-[70px]">{MONTH_LABELS[k]}</TableHead>
+                <th key={k} className="text-right py-1.5 px-1 font-medium w-[48px]">{MONTH_LABELS[k]}</th>
               ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row, i) => {
-              const isHeader = row.type === 'segment-header' || row.type === 'client-header';
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row) => {
               const isTotal = row.type === 'grand-total';
-              const isSectionTotal = row.type === 'segment-header';
+              const isSegment = row.type === 'segment-header';
+              const isClient = row.type === 'client-header';
+              const isCollapsed = collapsed.has(row.id);
+
+              const rowBg =
+                isTotal ? 'bg-gray-100' :
+                isSegment ? 'bg-gray-50' :
+                isClient ? 'bg-gray-50/50' : '';
+
+              const rowFont =
+                isTotal ? 'font-bold' :
+                isSegment ? 'font-semibold' :
+                isClient ? 'font-medium' : '';
 
               return (
-                <TableRow
-                  key={i}
-                  className={
-                    isTotal ? 'bg-gray-100 font-bold border-t-2' :
-                    isSectionTotal ? 'bg-gray-50 font-semibold' :
-                    row.type === 'client-header' ? 'bg-gray-50/50 font-medium' :
-                    ''
-                  }
+                <tr
+                  key={row.id}
+                  className={`border-b border-gray-100 ${rowBg} ${rowFont} ${isTotal ? 'border-t-2 border-t-gray-300' : ''}`}
                 >
-                  <TableCell
-                    className={`sticky left-0 z-10 text-sm ${
-                      isTotal ? 'bg-gray-100 font-bold' :
-                      isSectionTotal ? 'bg-gray-50 font-semibold' :
-                      row.type === 'client-header' ? 'bg-gray-50/50 font-medium' :
+                  <td
+                    className={`sticky left-0 z-10 py-1 px-1 whitespace-nowrap ${
+                      isTotal ? 'bg-gray-100' :
+                      isSegment ? 'bg-gray-50' :
+                      isClient ? 'bg-gray-50/50' :
                       'bg-background'
                     }`}
-                    style={{ paddingLeft: `${(row.depth * 16) + 16}px` }}
+                    style={{ paddingLeft: `${(row.depth * 12) + 4}px` }}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      {row.collapsible ? (
+                        <button
+                          onClick={() => toggleCollapse(row.id)}
+                          className="p-0.5 rounded hover:bg-gray-200 shrink-0"
+                        >
+                          {isCollapsed
+                            ? <ChevronRight className="w-3 h-3" />
+                            : <ChevronDown className="w-3 h-3" />
+                          }
+                        </button>
+                      ) : (
+                        <span className="w-4 shrink-0" />
+                      )}
                       <span className="truncate">{row.label}</span>
+                      {row.collapsible && isCollapsed && row.childCount && (
+                        <span className="text-[9px] text-muted-foreground">({row.childCount})</span>
+                      )}
                       {row.badge && (
-                        <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${row.badge.className}`}>
+                        <Badge variant="secondary" className={`text-[9px] px-1 py-0 leading-tight ${row.badge.className}`}>
                           {row.badge.text}
                         </Badge>
                       )}
                     </div>
-                  </TableCell>
-                  <TableCell className="text-center text-xs">
+                  </td>
+                  <td className="text-center py-1 px-0.5">
                     {row.probability !== undefined && (
-                      <span className={row.probability >= 0.9 ? 'text-emerald-700' : row.probability >= 0.5 ? 'text-blue-700' : 'text-amber-700'}>
-                        {(row.probability * 100).toFixed(0)}%
+                      <span className={
+                        row.probability >= 0.9 ? 'text-emerald-700' :
+                        row.probability >= 0.5 ? 'text-blue-700' :
+                        row.probability >= 0.25 ? 'text-amber-700' : 'text-red-600'
+                      }>
+                        {(row.probability * 100).toFixed(0)}
                       </span>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right text-sm tabular-nums font-semibold">
-                    {fmtTotal(row.total)}
-                  </TableCell>
+                  </td>
+                  <td className="text-right py-1 px-1.5 font-semibold tabular-nums">
+                    {fmtTotalK(row.total)}
+                  </td>
                   {MONTH_KEYS.map(k => {
                     const val = row.monthly[k];
                     const isProjectRow = row.type === 'project';
                     const intensity = isProjectRow && maxMonthly > 0 ? val / maxMonthly : 0;
                     return (
-                      <TableCell
+                      <td
                         key={k}
-                        className={`text-right text-sm tabular-nums ${
-                          isTotal || isSectionTotal ? '' :
-                          val > 0 && isProjectRow ? (intensity > 0.5 ? 'bg-blue-100' : intensity > 0.2 ? 'bg-blue-50' : '') : ''
+                        className={`text-right py-1 px-1 tabular-nums ${
+                          isTotal || isSegment || isClient ? '' :
+                          val > 0 && isProjectRow ? (intensity > 0.5 ? 'bg-blue-100' : intensity > 0.15 ? 'bg-blue-50' : '') : ''
                         }`}
                       >
-                        {fmt(val)}
-                      </TableCell>
+                        {fmtK(val)}
+                      </td>
                     );
                   })}
-                </TableRow>
+                </tr>
               );
             })}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </CardContent>
     </Card>
   );
