@@ -60,7 +60,13 @@ export interface ForecastProject {
 export interface ForecastStore {
   projects: ForecastProject[];
   version: number;
+  annualTarget?: Record<number, number>;
 }
+
+export const DEFAULT_ANNUAL_TARGETS: Record<number, number> = {
+  2026: 2_000_000,
+  2027: 2_000_000,
+};
 
 // Computed from a project
 export function computeMonthly(project: ForecastProject): MonthlyValues {

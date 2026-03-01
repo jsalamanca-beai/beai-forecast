@@ -15,6 +15,7 @@ import {
   ForecastType,
   Segment,
   Country,
+  DEFAULT_ANNUAL_TARGETS,
 } from '@/lib/types';
 import { SEED_PROJECTS } from '@/lib/data/seed';
 
@@ -28,17 +29,21 @@ function migrateProjects(projects: ForecastProject[]): ForecastProject[] {
 }
 
 function loadStore(): ForecastStore {
-  if (typeof window === 'undefined') return { projects: SEED_PROJECTS, version: 1 };
+  if (typeof window === 'undefined') return { projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as ForecastStore;
       if (parsed.projects && parsed.projects.length > 0) {
-        return { ...parsed, projects: migrateProjects(parsed.projects) };
+        return {
+          ...parsed,
+          projects: migrateProjects(parsed.projects),
+          annualTarget: parsed.annualTarget ?? DEFAULT_ANNUAL_TARGETS,
+        };
       }
     }
   } catch { /* ignore */ }
-  return { projects: SEED_PROJECTS, version: 1 };
+  return { projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS };
 }
 
 function saveStore(store: ForecastStore) {
@@ -91,7 +96,14 @@ export function useForecastStore() {
   }, []);
 
   const resetToSeed = useCallback(() => {
-    setStore({ projects: SEED_PROJECTS, version: 1 });
+    setStore({ projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS });
+  }, []);
+
+  const setAnnualTarget = useCallback((year: number, amount: number) => {
+    setStore(prev => ({
+      ...prev,
+      annualTarget: { ...(prev.annualTarget ?? DEFAULT_ANNUAL_TARGETS), [year]: amount },
+    }));
   }, []);
 
   const getFiltered = useCallback((filters: Filters = {}) => {
@@ -202,5 +214,7 @@ export function useForecastStore() {
     deleteProject,
     resetToSeed,
     getFiltered,
+    annualTarget: store.annualTarget ?? DEFAULT_ANNUAL_TARGETS,
+    setAnnualTarget,
   };
 }

@@ -2,8 +2,10 @@
 
 import { useForecastStore } from '@/hooks/useForecastStore';
 import { KpiCards } from '@/components/dashboard/KpiCards';
+import { TargetProgress } from '@/components/dashboard/TargetProgress';
+import { ScenariosChart } from '@/components/dashboard/ScenariosChart';
 import { MonthlyChart } from '@/components/dashboard/MonthlyChart';
-import { SegmentDonut } from '@/components/dashboard/SegmentDonut';
+import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel';
 import { CountryBar } from '@/components/dashboard/CountryBar';
 import { TopOpportunities } from '@/components/dashboard/TopOpportunities';
 import { ProjectsTable } from '@/components/dashboard/ProjectsTable';
@@ -22,6 +24,8 @@ export default function Home() {
     updateProject,
     deleteProject,
     resetToSeed,
+    annualTarget,
+    setAnnualTarget,
   } = useForecastStore();
 
   if (!loaded) {
@@ -67,7 +71,20 @@ export default function Home() {
         ignisPercent={stats.ignisPercent}
       />
 
-      {/* Charts row */}
+      {/* Target vs Forecast */}
+      <TargetProgress
+        totalBacklog={stats.totalBacklog}
+        totalPipelineWeighted={stats.totalPipelineWeighted}
+        totalProducts={stats.totalProducts}
+        annualTarget={annualTarget[selectedYear] ?? 2_000_000}
+        selectedYear={selectedYear}
+        onTargetChange={setAnnualTarget}
+      />
+
+      {/* Scenarios chart */}
+      <ScenariosChart projects={projects} selectedYear={selectedYear} />
+
+      {/* Monthly stacked bar chart */}
       <MonthlyChart
         monthlyBacklog={stats.monthlyBacklog}
         monthlyPipeline={stats.monthlyPipeline}
@@ -75,11 +92,9 @@ export default function Home() {
         selectedYear={selectedYear}
       />
 
+      {/* 3-col grid: Funnel + Country + Top Opp */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <SegmentDonut
-          ignisRevenue={stats.ignisRevenue}
-          totalForecast={stats.totalForecast}
-        />
+        <PipelineFunnel projects={projects} />
         <CountryBar byCountry={stats.byCountry} />
         <TopOpportunities projects={projects} />
       </div>
