@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ForecastProject,
   ForecastStore,
@@ -20,6 +20,7 @@ import {
 import { SEED_PROJECTS } from '@/lib/data/seed';
 
 const STORAGE_KEY = 'beai-forecast-v1';
+const POLL_INTERVAL = 5000; // 5 seconds
 
 function migrateProjects(projects: ForecastProject[]): ForecastProject[] {
   return projects.map(p => ({
@@ -28,7 +29,8 @@ function migrateProjects(projects: ForecastProject[]): ForecastProject[] {
   }));
 }
 
-function loadStore(): ForecastStore {
+// localStorage fallback (for offline or when API is unavailable)
+function loadFromLocal(): ForecastStore {
   if (typeof window === 'undefined') return { projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -46,9 +48,41 @@ function loadStore(): ForecastStore {
   return { projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS };
 }
 
-function saveStore(store: ForecastStore) {
+function saveToLocal(store: ForecastStore) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+// API calls for shared persistence
+async function loadFromAPI(): Promise<ForecastStore | null> {
+  try {
+    const res = await fetch('/api/store', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !data.projects) return null;
+    return {
+      ...data,
+      projects: migrateProjects(data.projects),
+      annualTarget: data.annualTarget ?? DEFAULT_ANNUAL_TARGETS,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function saveToAPI(store: ForecastStore): Promise<number | null> {
+  try {
+    const res = await fetch('/api/store', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(store),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.version ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export interface Filters {
@@ -64,47 +98,113 @@ export function useForecastStore() {
   const [store, setStore] = useState<ForecastStore>({ projects: [], version: 1 });
   const [loaded, setLoaded] = useState(false);
   const [selectedYear, setSelectedYear] = useState<ForecastYear>(2026);
+  const [syncing, setSyncing] = useState(false);
+  const versionRef = useRef(0);
+  const savingRef = useRef(false);
 
+  // Initial load: try API first, fall back to localStorage
   useEffect(() => {
-    setStore(loadStore());
-    setLoaded(true);
+    let cancelled = false;
+    async function init() {
+      const apiStore = await loadFromAPI();
+      if (cancelled) return;
+      if (apiStore) {
+        versionRef.current = apiStore.version ?? 0;
+        setStore(apiStore);
+        saveToLocal(apiStore); // cache locally
+      } else {
+        // API unavailable - use localStorage
+        const local = loadFromLocal();
+        setStore(local);
+        // Try to push local data to API for first-time setup
+        const version = await saveToAPI(local);
+        if (version !== null) versionRef.current = version;
+      }
+      setLoaded(true);
+    }
+    init();
+    return () => { cancelled = true; };
   }, []);
 
+  // Poll for remote changes every 5 seconds
   useEffect(() => {
-    if (loaded) saveStore(store);
-  }, [store, loaded]);
+    if (!loaded) return;
+    const interval = setInterval(async () => {
+      if (savingRef.current) return; // skip poll while saving
+      const remote = await loadFromAPI();
+      if (!remote) return;
+      const remoteVersion = remote.version ?? 0;
+      if (remoteVersion > versionRef.current) {
+        versionRef.current = remoteVersion;
+        setStore(remote);
+        saveToLocal(remote);
+        setSyncing(true);
+        setTimeout(() => setSyncing(false), 1500);
+      }
+    }, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loaded]);
+
+  // Save to both API and localStorage on changes
+  const persistStore = useCallback(async (newStore: ForecastStore) => {
+    saveToLocal(newStore);
+    savingRef.current = true;
+    const version = await saveToAPI(newStore);
+    if (version !== null) {
+      versionRef.current = version;
+    }
+    savingRef.current = false;
+  }, []);
 
   const addProject = useCallback((project: Omit<ForecastProject, 'id'>) => {
-    setStore(prev => ({
-      ...prev,
-      projects: [...prev.projects, { ...project, id: generateId() }],
-    }));
-  }, []);
+    setStore(prev => {
+      const next = {
+        ...prev,
+        projects: [...prev.projects, { ...project, id: generateId() }],
+      };
+      persistStore(next);
+      return next;
+    });
+  }, [persistStore]);
 
   const updateProject = useCallback((id: string, updates: Partial<ForecastProject>) => {
-    setStore(prev => ({
-      ...prev,
-      projects: prev.projects.map(p => p.id === id ? { ...p, ...updates } : p),
-    }));
-  }, []);
+    setStore(prev => {
+      const next = {
+        ...prev,
+        projects: prev.projects.map(p => p.id === id ? { ...p, ...updates } : p),
+      };
+      persistStore(next);
+      return next;
+    });
+  }, [persistStore]);
 
   const deleteProject = useCallback((id: string) => {
-    setStore(prev => ({
-      ...prev,
-      projects: prev.projects.filter(p => p.id !== id),
-    }));
-  }, []);
+    setStore(prev => {
+      const next = {
+        ...prev,
+        projects: prev.projects.filter(p => p.id !== id),
+      };
+      persistStore(next);
+      return next;
+    });
+  }, [persistStore]);
 
   const resetToSeed = useCallback(() => {
-    setStore({ projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS });
-  }, []);
+    const next = { projects: SEED_PROJECTS, version: 1, annualTarget: DEFAULT_ANNUAL_TARGETS };
+    setStore(next);
+    persistStore(next);
+  }, [persistStore]);
 
   const setAnnualTarget = useCallback((year: number, amount: number) => {
-    setStore(prev => ({
-      ...prev,
-      annualTarget: { ...(prev.annualTarget ?? DEFAULT_ANNUAL_TARGETS), [year]: amount },
-    }));
-  }, []);
+    setStore(prev => {
+      const next = {
+        ...prev,
+        annualTarget: { ...(prev.annualTarget ?? DEFAULT_ANNUAL_TARGETS), [year]: amount },
+      };
+      persistStore(next);
+      return next;
+    });
+  }, [persistStore]);
 
   const getFiltered = useCallback((filters: Filters = {}) => {
     return store.projects.filter(p => {
@@ -206,6 +306,7 @@ export function useForecastStore() {
   return {
     projects: store.projects,
     loaded,
+    syncing,
     stats,
     selectedYear,
     setSelectedYear,

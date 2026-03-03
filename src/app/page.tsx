@@ -11,12 +11,13 @@ import { TopOpportunities } from '@/components/dashboard/TopOpportunities';
 import { ProjectsTable } from '@/components/dashboard/ProjectsTable';
 import { MonthlyGrid } from '@/components/dashboard/MonthlyGrid';
 import { Button } from '@/components/ui/button';
-import { Download } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 
 export default function Home() {
   const {
     projects,
     loaded,
+    syncing,
     stats,
     selectedYear,
     setSelectedYear,
@@ -55,8 +56,14 @@ export default function Home() {
           <Button size="sm" variant="outline" onClick={handleExport} className="h-8 text-xs">
             <Download className="w-3.5 h-3.5 mr-1" /> Exportar Excel
           </Button>
+          {syncing && (
+            <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              Sincronizando...
+            </div>
+          )}
           <div className="text-right text-xs text-muted-foreground">
-            <p>Datos actualizados</p>
+            <p>Datos en tiempo real</p>
             <p className="font-mono">{new Date().toLocaleDateString('es-ES')}</p>
           </div>
         </div>
