@@ -145,7 +145,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
             id="tcvInput"
             type="number"
             min={0}
-            step={1000}
+            step={1}
             value={Math.round(monthlyAmount * durationMonths)}
             onChange={e => {
               const newTcv = Number(e.target.value);
@@ -159,7 +159,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
             id="monthlyAmount"
             type="number"
             min={0}
-            step={100}
+            step={1}
             value={monthlyAmount}
             onChange={e => setMonthlyAmount(Number(e.target.value))}
           />
