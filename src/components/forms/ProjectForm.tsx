@@ -134,7 +134,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
             type="number"
             min={0}
             max={100}
-            step={5}
+            step={1}
             value={probability * 100}
             onChange={e => setProbability(Number(e.target.value) / 100)}
           />
